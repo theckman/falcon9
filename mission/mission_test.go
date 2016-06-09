@@ -36,7 +36,7 @@ func (t *TestSuite) SetUpSuite(c *C) {
 		&f9mission.MissionParams{
 			ID:     "42",
 			Name:   "Mission: Test Suite",
-			GoNoGo: f9mission.VoteQuorum,
+			GoNoGo: f9mission.GNGQuorum,
 		},
 	)
 	c.Assert(err, IsNil)
@@ -72,7 +72,7 @@ func (t *TestSuite) TestMission_ID(c *C) {
 }
 
 func (t *TestSuite) TestMission_GNGSetting(c *C) {
-	c.Check(t.mission.GNGSetting(), Equals, f9mission.VoteQuorum)
+	c.Check(t.mission.GNGSetting(), Equals, f9mission.GNGQuorum)
 }
 
 func (t *TestSuite) TestMission_Crew(c *C) {
@@ -97,6 +97,9 @@ func (t *TestSuite) TestMission_Crew(c *C) {
 
 func (t *TestSuite) TestMission_AddCrew(c *C) {
 	var err error
+
+	// reset the mission
+	defer t.SetUpSuite(c)
 
 	// generate a new crew member
 	person, err := f9crew.NewCrewMember("Valentina Kerman", "3")
@@ -131,14 +134,14 @@ func (t *TestSuite) TestMission_AddCrew(c *C) {
 	// assert no error if crew present and we are replacing them
 	err = t.mission.AddCrew(person, true)
 	c.Check(err, IsNil)
-
-	// reset the mission
-	t.SetUpSuite(c)
 }
 
 func (t *TestSuite) TestMission_RemoveCrew(c *C) {
 	var person f9crew.Interface
 	var err error
+
+	// reset the mission
+	defer t.SetUpSuite(c)
 
 	// remove the person from the crew and make sure it is who we expect
 	person, err = t.mission.RemoveCrew("d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35")
@@ -158,7 +161,161 @@ func (t *TestSuite) TestMission_RemoveCrew(c *C) {
 
 	c.Check(crew[1].Name(), Equals, "Jebediah Kerman")
 	c.Check(crew[1].HashedKey(), Equals, "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9")
+}
+
+func (*TestSuite) TestMission_Initiate(c *C) {
+	var m *f9mission.Mission
+	var err error
+
+	m, err = f9mission.NewMission(&f9mission.MissionParams{
+		ID:     "id",
+		GoNoGo: f9mission.GNGQuorum,
+	})
+	c.Check(err, IsNil)
+	c.Check(m, NotNil)
+
+	err = m.Initiate()
+	c.Check(err, Equals, f9mission.ErrNoAssignedCrew)
+
+	crew, err := f9crew.NewCrewMember("Jebediah Kerman", "0")
+	c.Assert(err, IsNil)
+
+	err = m.AddCrew(crew, false)
+	c.Assert(err, IsNil)
+
+	err = m.Initiate()
+	c.Check(err, IsNil)
+
+	err = m.Initiate()
+	c.Check(err, Equals, f9mission.ErrGNGInProgress)
+}
+
+func (t *TestSuite) TestMission_UpdateVote(c *C) {
+	var bol bool
+	var err error
+
+	m, err := f9mission.NewMission(&f9mission.MissionParams{
+		ID:     "id",
+		GoNoGo: f9mission.GNGQuorum,
+	})
+	c.Check(err, IsNil)
+	c.Check(m, NotNil)
+
+	crew, err := f9crew.NewCrewMember("Jebediah Kerman", "0")
+	c.Assert(err, IsNil)
+	c.Assert(m.AddCrew(crew, false), IsNil)
+
+	crew, err = f9crew.NewCrewMember("Bill Kerman", "1")
+	c.Assert(err, IsNil)
+	c.Assert(m.AddCrew(crew, false), IsNil)
+
+	err = m.Initiate()
+	c.Assert(err, IsNil)
+
+	//
+	// Test that, with GNGQuorum, less than three crew members falls
+	// back to GNGAll mode
+	//
+	bol, err = m.UpdateVote("5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9", f9mission.VoteYes)
+	c.Assert(err, IsNil)
+	c.Check(bol, Equals, false)
+
+	bol, err = m.UpdateVote("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b", f9mission.VoteYes)
+	c.Assert(err, IsNil)
+	c.Check(bol, Equals, true)
+
+	//
+	// Test that adding third crew member, with GNGQuorum and two votes,
+	// marks the vote as being successful
+	//
+	crew, err = f9crew.NewCrewMember("Bob Kerman", "2")
+	c.Assert(err, IsNil)
+	c.Assert(m.AddCrew(crew, false), IsNil)
+
+	_, bol = m.Tally()
+	c.Check(bol, Equals, true)
+
+	//
+	// Test that adding more crew, thus changing quorum, causes the
+	// vote to fall back to a fail.
+	//
+	crew, err = f9crew.NewCrewMember("Valentina Kerman", "3")
+	c.Assert(err, IsNil)
+	c.Assert(m.AddCrew(crew, false), IsNil)
+
+	crew, err = f9crew.NewCrewMember("Dildo Kerman", "4") /* lol, I hope someone gets this reference */
+	c.Assert(err, IsNil)
+	c.Assert(m.AddCrew(crew, false), IsNil)
+
+	_, bol = m.Tally()
+	c.Check(bol, Equals, false)
+
+	//
+	// Test that updating a cast vote doesn't change anything
+	//
+	bol, err = m.UpdateVote("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b", f9mission.VoteYes)
+	c.Assert(err, IsNil)
+	c.Check(bol, Equals, false)
+
+	//
+	// Test that adding another Yes vote gets us quorum.
+	//
+	bol, err = m.UpdateVote("4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce", f9mission.VoteYes)
+	c.Assert(err, IsNil)
+	c.Check(bol, Equals, true)
+}
+
+func (t *TestSuite) TestMission_Tally(c *C) {
+	var tally f9mission.Tally
+	var err error
 
 	// reset the mission
-	t.SetUpSuite(c)
+	defer t.SetUpSuite(c)
+
+	//
+	// Test that nil is returned before Initiate() function is called
+	//
+	tally, _ = t.mission.Tally()
+	c.Assert(len(tally), Equals, 0)
+	c.Check(tally, DeepEquals, f9mission.Tally(nil))
+
+	err = t.mission.Initiate()
+	c.Assert(err, Equals, nil)
+
+	//
+	// Test that not nil is returned after Initiate() function is called
+	//
+	tally, _ = t.mission.Tally()
+	c.Assert(len(tally), Equals, 0)
+	c.Check(tally, Not(DeepEquals), f9mission.Tally(nil))
+
+	//
+	// Test that Tally() can do maths
+	//
+	_, err = t.mission.UpdateVote("5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9", f9mission.VoteYes)
+	c.Assert(err, IsNil)
+
+	tally, _ = t.mission.Tally()
+	c.Assert(len(tally), Equals, 1)
+	c.Check(tally[f9mission.VoteYes], Equals, 1)
+	c.Check(tally[f9mission.VoteNo], Equals, 0)
+	c.Check(tally[f9mission.VoteAbstain], Equals, 0)
+
+	_, err = t.mission.UpdateVote("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b", f9mission.VoteNo)
+	c.Assert(err, IsNil)
+
+	tally, _ = t.mission.Tally()
+	c.Assert(len(tally), Equals, 2)
+	c.Check(tally[f9mission.VoteYes], Equals, 1)
+	c.Check(tally[f9mission.VoteNo], Equals, 1)
+	c.Check(tally[f9mission.VoteAbstain], Equals, 0)
+
+	_, err = t.mission.UpdateVote("d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35", f9mission.VoteAbstain)
+	c.Assert(err, IsNil)
+
+	tally, _ = t.mission.Tally()
+	c.Assert(len(tally), Equals, 3)
+	c.Check(tally[f9mission.VoteYes], Equals, 1)
+	c.Check(tally[f9mission.VoteNo], Equals, 1)
+	c.Check(tally[f9mission.VoteAbstain], Equals, 1)
 }
