@@ -306,14 +306,7 @@ func (m *Mission) UpdateVote(hashedKey string, vote Vote) (bool, error) {
 }
 
 func (m *Mission) isReady(t Tally) bool {
-	mode := m.gng
 	numCrew := len(m.crew)
-
-	// if we have less than three crew members
-	// we cannot achieve quorum, so fall back to GNGAll.
-	if numCrew < 3 && mode == GNGQuorum {
-		mode = GNGAll
-	}
 
 	switch m.gng {
 	case GNGAll:
