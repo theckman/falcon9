@@ -18,9 +18,7 @@ const (
 	// VoteAbort is the vote to abort. This is only available for use after the
 	// countdown has began. Depending on your mission parameters, a single abort
 	// may scrub the launch.
-	//
-	// TODO: implement this.
-	// VoteAbort
+	VoteAbort
 )
 
 func (v Vote) String() string {
@@ -31,6 +29,8 @@ func (v Vote) String() string {
 		return "No"
 	case VoteYes:
 		return "Yes"
+	case VoteAbort:
+		return "Abort"
 	default:
 		return "Unknown"
 	}
