@@ -3,8 +3,10 @@ package f9mission
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/theckman/falcon9/crew"
+	"github.com/theckman/go-fsm"
 )
 
 // GNGSetting is the type that defines the behavior of the mission parameters for
@@ -20,6 +22,14 @@ const (
 	// of crew members vote for blastoff. If there are too few crew members to
 	// reach quorum without all voting "Go", it falls back to GNGAll mode.
 	GNGQuorum
+)
+
+const (
+	StateReady       fsm.State = "ready"
+	StateVoting      fsm.State = "voting"
+	StateBlastoffing fsm.State = "blastoffing"
+	StateAborted     fsm.State = "aborted"
+	StateFinished    fsm.State = "finished"
 )
 
 // Tally is the map used for the current voting result tally. The key is the Vote kind.
@@ -44,11 +54,11 @@ var ErrCrewMemberNotPresent = errors.New("the crew member you've tried to remove
 // without there being any crew members assigned to the mission.
 var ErrNoAssignedCrew = errors.New("before Initiating a Go/No-Go the mission must have crew assigned")
 
-// ErrGNGInProgress is the error returned from Initiate() if a Go/No-Go is in progress.
-var ErrGNGInProgress = errors.New("Go/No-Go vote is currently in progress")
+// ErrMissionInProgress is the error returned from Initiate() if a mission is in progress.
+var ErrMissionInProgress = errors.New("Go/No-Go vote is currently in progress")
 
-// ErrGNGNotInProgress is the error returned from UpdateVote() if a Go/No-Go is not in progress
-var ErrGNGNotInProgress = errors.New("Go/No-Go vote is *NOT* currently in progress")
+// ErrVotingNotInProgress is the error returned from UpdateVote() if a Go/No-Go is not in progress
+var ErrVotingNotInProgress = errors.New("Go/No-Go vote is *NOT* currently in progress")
 
 // InterfaceManageCrew is the mission-specific interface for adding crew members.
 type InterfaceManageCrew interface {
@@ -87,7 +97,7 @@ type InterfaceLaunchControl interface {
 	// The bool value returned indicates whether there have been enough "Go"
 	// votes to proceed with blastoff.
 	//
-	// If the mission is not initialized this will return a ErrGNGNotInProgress
+	// If the mission is not initialized this will return a ErrVotingNotInProgress
 	// error. If the crew member is not assigned to this mission, this will return
 	// a ErrCrewMembeverNotPresent error.
 	UpdateVote(hashedKey string, vote Vote) (bool, error)
@@ -109,6 +119,10 @@ type InterfaceAccessors interface {
 
 	// GNGSetting returns the Go/No-Go setting for the mission.
 	GNGSetting() GNGSetting
+
+	// CurrentState returns the state of the internal state machine.
+	// See the State* constants for an idea of what values may be returned.
+	CurrentState() fsm.State
 }
 
 // Interface is the interface representing a falcon9 mission. This allows consumers
@@ -121,9 +135,10 @@ type Interface interface {
 
 // MissionParams is a struct that consists of the parameters for a mission.
 type MissionParams struct {
-	ID     string
-	GoNoGo GNGSetting
-	Name   string
+	ID                  string
+	GoNoGo              GNGSetting
+	Name                string
+	BlastoffingCooldown time.Duration
 }
 
 // Mission is the struct that implements the f9mission.Interface interface. This
@@ -136,9 +151,50 @@ type Mission struct {
 	crew   map[string]f9crew.Interface
 	crewMu sync.Mutex
 
-	gngInProgress bool
-	gngResults    Results
-	gngMu         sync.Mutex
+	stateMachine     *fsm.Machine
+	blastoffCooldown time.Duration
+
+	gngResults Results
+	gngMu      sync.Mutex
+}
+
+func setUpStateMachine(machine *fsm.Machine) error {
+	// add initial state: ready
+	// it can be transitioned in to a voting state
+	if err := machine.AddStateTransitionRules(StateReady, StateVoting); err != nil {
+		return err
+	}
+
+	// add voting state (to decide if everyone is ready)
+	// voting can either lead to blastoffing or aborting
+	if err := machine.AddStateTransitionRules(StateVoting, StateBlastoffing, StateAborted); err != nil {
+		return err
+	}
+
+	// add blastoffing state (when the blastoff occurs)
+	// blastoffing can either lead to be finished or being aborted
+	if err := machine.AddStateTransitionRules(StateBlastoffing, StateAborted, StateFinished); err != nil {
+		return err
+	}
+
+	// add aborted state
+	// aborted can only lead to a ready state
+	if err := machine.AddStateTransitionRules(StateAborted, StateReady); err != nil {
+		return err
+	}
+
+	// add finished state
+	// finished can only lead to ready
+	if err := machine.AddStateTransitionRules(StateFinished, StateReady); err != nil {
+		return err
+	}
+
+	// set initial machine state: ready
+	if err := machine.StateTransition(StateReady); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // NewMission is a function to provide a new mission with the provided parameters.
@@ -151,11 +207,21 @@ func NewMission(mp *MissionParams) (*Mission, error) {
 		return nil, errors.New("the ID of the mission cannot be an empty string")
 	}
 
+	if mp.BlastoffingCooldown == 0 {
+		mp.BlastoffingCooldown = time.Second * 10
+	}
+
 	m := &Mission{
-		id:   mp.ID,
-		name: mp.Name,
-		gng:  mp.GoNoGo,
-		crew: make(map[string]f9crew.Interface),
+		id:               mp.ID,
+		name:             mp.Name,
+		gng:              mp.GoNoGo,
+		crew:             make(map[string]f9crew.Interface),
+		stateMachine:     &fsm.Machine{},
+		blastoffCooldown: mp.BlastoffingCooldown,
+	}
+
+	if err := setUpStateMachine(m.stateMachine); err != nil {
+		return nil, err
 	}
 
 	return m, nil
@@ -170,6 +236,10 @@ func (m *Mission) ID() string { return m.id }
 
 // GNGSetting returns the Go/No-Go setting for the mission.
 func (m *Mission) GNGSetting() GNGSetting { return m.gng }
+
+// CurrentState returns the state of the internal state machine.
+// See the State* constants for an idea of what values may be returned.
+func (m *Mission) CurrentState() fsm.State { return m.stateMachine.CurrentState() }
 
 // Crew is a function that returns an f9crew.Manifest. This is a
 // representation of the crew for the current mission. The slice
@@ -226,6 +296,11 @@ func (m *Mission) AddCrew(crew f9crew.Interface, replace bool) error {
 
 	m.crew[crew.HashedKey()] = crew
 
+	if m.CurrentState() == StateBlastoffing {
+		err := m.stateMachine.StateTransition(StateAborted)
+		return err
+	}
+
 	return nil
 }
 
@@ -268,29 +343,36 @@ func (m *Mission) Initiate() error {
 	m.gngMu.Lock()
 	defer m.gngMu.Unlock()
 
-	if m.gngInProgress {
-		return ErrGNGInProgress
+	switch m.CurrentState() {
+	case StateVoting, StateBlastoffing:
+		return ErrMissionInProgress
+	case StateAborted, StateFinished:
+		if err := m.stateMachine.StateTransition(StateReady); err != nil {
+			return err
+		}
 	}
 
 	m.gngResults = make(Results)
-	m.gngInProgress = true
 
-	return nil
+	return m.stateMachine.StateTransition(StateVoting)
 }
 
 // UpdateVote updates the vote of a crew member for the current mission.
 // The bool value returned indicates whether there have been enough "Go"
 // votes to proceed with blastoff.
 //
-// If the mission is not initialized this will return a ErrGNGNotInProgress
+// If the mission is not initialized this will return a ErrVotingNotInProgress
 // error. If the crew member is not assigned to this mission, this will return
 // a ErrCrewMembeverNotPresent error.
 func (m *Mission) UpdateVote(hashedKey string, vote Vote) (bool, error) {
 	m.gngMu.Lock()
 	defer m.gngMu.Unlock()
 
-	if !m.gngInProgress {
-		return false, ErrGNGNotInProgress
+	switch m.CurrentState() {
+	case StateVoting, StateBlastoffing:
+		// pass without issue
+	default:
+		return false, ErrVotingNotInProgress
 	}
 
 	m.crewMu.Lock()
@@ -302,20 +384,49 @@ func (m *Mission) UpdateVote(hashedKey string, vote Vote) (bool, error) {
 
 	m.gngResults[hashedKey] = vote
 
-	return m.isReady(m.tally()), nil
+	// if we are aborting...
+	if vote == VoteAbort {
+		err := m.stateMachine.StateTransition(StateAborted)
+		return false, err
+	}
+
+	isReady := m.isReady(m.tally())
+
+	// if this vote pushed us over the limit
+	if isReady && m.CurrentState() != StateBlastoffing {
+		err := m.stateMachine.StateTransition(StateBlastoffing)
+
+		t := time.NewTimer(m.blastoffCooldown)
+
+		// spin off a goroutine to set our status back to StatusReady
+		// once the above timer fires
+		go func() {
+			<-t.C
+			if m.CurrentState() == StateBlastoffing {
+				m.stateMachine.StateTransition(StateFinished)
+			}
+		}()
+
+		return isReady, err
+	}
+
+	return isReady, nil
 }
 
 func (m *Mission) isReady(t Tally) bool {
+	// if someone voted to abort, short-circuit
+	if t[VoteAbort] > 0 {
+		return false
+	}
+
 	numCrew := len(m.crew)
 
 	switch m.gng {
-	case GNGAll:
-		return t[VoteYes] == numCrew
 	case GNGQuorum:
 		quroum := (numCrew / 2) + 1
 		return t[VoteYes] >= quroum
 	default:
-		return false
+		return t[VoteYes] == numCrew
 	}
 }
 
@@ -332,7 +443,7 @@ func (m *Mission) tally() Tally {
 // Tally returns the tally of votes and whether there are enough votes
 // to proceed with the mission.
 func (m *Mission) Tally() (Tally, bool) {
-	if !m.gngInProgress {
+	if m.CurrentState() == StateReady {
 		return nil, false
 	}
 
