@@ -36,7 +36,7 @@ func addCrew(m *f9mission.Mission, c *C) {
 func (t *TestSuite) SetUpSuite(c *C) {
 	mission, err := f9mission.NewMission(
 		&f9mission.MissionParams{
-			ID:     "42",
+			ID:     42,
 			Name:   "Mission: Test Suite",
 			GoNoGo: f9mission.GNGQuorum,
 		},
@@ -57,10 +57,6 @@ func (*TestSuite) TestNewMission(c *C) {
 	c.Check(m, IsNil)
 
 	m, err = f9mission.NewMission(&f9mission.MissionParams{})
-	c.Check(err, ErrorMatches, "the ID of the mission cannot be an empty string")
-	c.Check(m, IsNil)
-
-	m, err = f9mission.NewMission(&f9mission.MissionParams{ID: "id"})
 	c.Check(err, IsNil)
 	c.Check(m, NotNil)
 }
@@ -70,7 +66,7 @@ func (t *TestSuite) TestMission_Name(c *C) {
 }
 
 func (t *TestSuite) TestMission_ID(c *C) {
-	c.Check(t.mission.ID(), Equals, "42")
+	c.Check(t.mission.ID(), Equals, uint32(42))
 }
 
 func (t *TestSuite) TestMission_GNGSetting(c *C) {
@@ -205,7 +201,6 @@ func (*TestSuite) TestMission_Initiate(c *C) {
 	var state fsm.State
 
 	m, err = f9mission.NewMission(&f9mission.MissionParams{
-		ID:     "id",
 		GoNoGo: f9mission.GNGQuorum,
 	})
 	c.Check(err, IsNil)
@@ -236,7 +231,6 @@ func (t *TestSuite) TestMission_UpdateVote(c *C) {
 	var state fsm.State
 
 	m, err := f9mission.NewMission(&f9mission.MissionParams{
-		ID:                  "id",
 		GoNoGo:              f9mission.GNGQuorum,
 		BlastoffingCooldown: time.Millisecond * 100,
 	})

@@ -115,7 +115,7 @@ type InterfaceAccessors interface {
 	Name() string
 
 	// ID returns the unique identifier of the mission.
-	ID() string
+	ID() uint32
 
 	// GNGSetting returns the Go/No-Go setting for the mission.
 	GNGSetting() GNGSetting
@@ -135,7 +135,7 @@ type Interface interface {
 
 // MissionParams is a struct that consists of the parameters for a mission.
 type MissionParams struct {
-	ID                  string
+	ID                  uint32
 	GoNoGo              GNGSetting
 	Name                string
 	BlastoffingCooldown time.Duration
@@ -144,7 +144,7 @@ type MissionParams struct {
 // Mission is the struct that implements the f9mission.Interface interface. This
 // represents a falcon9 mission and all of its parameters.
 type Mission struct {
-	id   string
+	id   uint32
 	name string
 	gng  GNGSetting
 
@@ -203,10 +203,6 @@ func NewMission(mp *MissionParams) (*Mission, error) {
 		return nil, errors.New("mission parameters cannot be nil")
 	}
 
-	if mp.ID == "" {
-		return nil, errors.New("the ID of the mission cannot be an empty string")
-	}
-
 	if mp.BlastoffingCooldown == 0 {
 		mp.BlastoffingCooldown = time.Second * 10
 	}
@@ -232,7 +228,7 @@ func NewMission(mp *MissionParams) (*Mission, error) {
 func (m *Mission) Name() string { return m.name }
 
 // ID returns the unique identifier of the mission.
-func (m *Mission) ID() string { return m.id }
+func (m *Mission) ID() uint32 { return m.id }
 
 // GNGSetting returns the Go/No-Go setting for the mission.
 func (m *Mission) GNGSetting() GNGSetting { return m.gng }

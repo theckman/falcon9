@@ -10,10 +10,10 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-const maxUint16 = int(^uint16(0))
+const maxUint32 = int(^uint32(0))
 
-func randUint16() uint16 {
-	return uint16(rand.Intn(maxUint16))
+func randUint32() uint32 {
+	return uint32(rand.Intn(maxUint32))
 }
 
 func tearDownRegistry(c *C) {
@@ -32,7 +32,7 @@ func (*TestSuite) TestAddMission(c *C) {
 	defer tearDownRegistry(c)
 
 	mission := &f9mission.Mission{}
-	id := randUint16()
+	id := randUint32()
 
 	err = f9missioncontrol.AddMission(id, mission)
 	c.Assert(err, IsNil)
@@ -48,19 +48,19 @@ func (*TestSuite) TestAddMission(c *C) {
 }
 
 func (*TestSuite) TestListMissions(c *C) {
-	var missions []uint16
+	var missions []uint32
 
 	// clean up the registry
 	defer tearDownRegistry(c)
 
-	set := make(map[uint16]struct{})
+	set := make(map[uint32]struct{})
 
 	// set up the registry for this test
 	for i := 0; i < 5; i++ {
-		id := randUint16()
+		id := randUint32()
 
 		mp := &f9mission.MissionParams{
-			ID:   fmt.Sprintf("testID-%d", id),
+			ID:   id,
 			Name: fmt.Sprintf("testName-%d", id),
 		}
 
@@ -82,7 +82,7 @@ func (*TestSuite) TestListMissions(c *C) {
 
 		missionIfc := f9missioncontrol.GetMission(id)
 		c.Check(missionIfc.Name(), Equals, fmt.Sprintf("testName-%d", id))
-		c.Check(missionIfc.ID(), Equals, fmt.Sprintf("testID-%d", id))
+		c.Check(missionIfc.ID(), Equals, id)
 	}
 }
 
@@ -93,15 +93,15 @@ func (*TestSuite) TestGetMission(c *C) {
 	// clean up the registry
 	defer tearDownRegistry(c)
 
+	id := randUint32()
+
 	mp := &f9mission.MissionParams{
-		ID:   "testID",
+		ID:   id,
 		Name: "testName",
 	}
 
 	mission, err := f9mission.NewMission(mp)
 	c.Assert(err, IsNil)
-
-	id := randUint16()
 
 	err = f9missioncontrol.AddMission(id, mission)
 	c.Assert(err, IsNil)
@@ -112,7 +112,7 @@ func (*TestSuite) TestGetMission(c *C) {
 	mIfc = f9missioncontrol.GetMission(id)
 	c.Assert(mIfc, NotNil)
 	c.Check(mIfc.Name(), Equals, "testName")
-	c.Check(mIfc.ID(), Equals, "testID")
+	c.Check(mIfc.ID(), Equals, id)
 
 	//
 	// Test when mission does not exist
@@ -127,15 +127,15 @@ func (*TestSuite) TestRemoveMission(c *C) {
 	// clean up the registry
 	defer tearDownRegistry(c)
 
+	id := randUint32()
+
 	mp := &f9mission.MissionParams{
-		ID:   "testID",
+		ID:   id,
 		Name: "testName",
 	}
 
 	mission, err := f9mission.NewMission(mp)
 	c.Assert(err, IsNil)
-
-	id := randUint16()
 
 	err = f9missioncontrol.AddMission(id, mission)
 	c.Assert(err, IsNil)
@@ -154,6 +154,6 @@ func (*TestSuite) TestRemoveMission(c *C) {
 	mIfc = f9missioncontrol.RemoveMission(id)
 	c.Assert(mIfc, NotNil)
 	c.Check(mIfc.Name(), Equals, "testName")
-	c.Check(mIfc.ID(), Equals, "testID")
+	c.Check(mIfc.ID(), Equals, id)
 	c.Check(len(f9missioncontrol.ListMissions()), Equals, 0)
 }
