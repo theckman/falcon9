@@ -8,7 +8,7 @@ import (
 )
 
 type missionRegistry struct {
-	missions map[uint16]f9mission.Interface
+	missions map[uint32]f9mission.Interface
 }
 
 var (
@@ -18,7 +18,7 @@ var (
 
 // GetMission returns a mission, based on the ID, if one has been created. If the
 // mission doesn't exist this just returns nil.
-func GetMission(id uint16) f9mission.Interface {
+func GetMission(id uint32) f9mission.Interface {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
@@ -33,7 +33,7 @@ func GetMission(id uint16) f9mission.Interface {
 
 // AddMission is a function to add a mission to the registry. This will only
 // return an error when the registry already has a mission with that ID.
-func AddMission(id uint16, mission f9mission.Interface) error {
+func AddMission(id uint32, mission f9mission.Interface) error {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 
@@ -48,7 +48,7 @@ func AddMission(id uint16, mission f9mission.Interface) error {
 
 // RemoveMission purges a mission from the mission registry. If the mission existed
 // this will return the mission, otherwise it will return nil.
-func RemoveMission(id uint16) f9mission.Interface {
+func RemoveMission(id uint32) f9mission.Interface {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 
@@ -61,11 +61,11 @@ func RemoveMission(id uint16) f9mission.Interface {
 }
 
 // ListMissions returns a slice of the mission IDs. They are in no particular order.
-func ListMissions() []uint16 {
+func ListMissions() []uint32 {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
-	slice := make([]uint16, len(registry.missions))
+	slice := make([]uint32, len(registry.missions))
 
 	var i int
 
@@ -78,5 +78,5 @@ func ListMissions() []uint16 {
 }
 
 func init() {
-	registry.missions = make(map[uint16]f9mission.Interface)
+	registry.missions = make(map[uint32]f9mission.Interface)
 }
