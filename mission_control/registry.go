@@ -3,12 +3,10 @@ package f9missioncontrol
 import (
 	"fmt"
 	"sync"
-
-	"github.com/theckman/falcon9/mission"
 )
 
 type missionRegistry struct {
-	missions map[uint32]f9mission.Interface
+	missions map[uint32]*MissionControl
 }
 
 var (
@@ -18,7 +16,7 @@ var (
 
 // GetMission returns a mission, based on the ID, if one has been created. If the
 // mission doesn't exist this just returns nil.
-func GetMission(id uint32) f9mission.Interface {
+func GetMission(id uint32) *MissionControl {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
@@ -33,7 +31,7 @@ func GetMission(id uint32) f9mission.Interface {
 
 // AddMission is a function to add a mission to the registry. This will only
 // return an error when the registry already has a mission with that ID.
-func AddMission(id uint32, mission f9mission.Interface) error {
+func AddMission(id uint32, mission *MissionControl) error {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 
@@ -48,7 +46,7 @@ func AddMission(id uint32, mission f9mission.Interface) error {
 
 // RemoveMission purges a mission from the mission registry. If the mission existed
 // this will return the mission, otherwise it will return nil.
-func RemoveMission(id uint32) f9mission.Interface {
+func RemoveMission(id uint32) *MissionControl {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 
@@ -78,5 +76,5 @@ func ListMissions() []uint32 {
 }
 
 func init() {
-	registry.missions = make(map[uint32]f9mission.Interface)
+	registry.missions = make(map[uint32]*MissionControl)
 }

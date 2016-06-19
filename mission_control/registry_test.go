@@ -34,7 +34,9 @@ func (*TestSuite) TestAddMission(c *C) {
 	mission := &f9mission.Mission{}
 	id := randUint32()
 
-	err = f9missioncontrol.AddMission(id, mission)
+	mc := &f9missioncontrol.MissionControl{Mission: mission}
+
+	err = f9missioncontrol.AddMission(id, mc)
 	c.Assert(err, IsNil)
 
 	mIfc := f9missioncontrol.GetMission(id)
@@ -43,7 +45,7 @@ func (*TestSuite) TestAddMission(c *C) {
 	//
 	// Test that you can't register it twice
 	//
-	err = f9missioncontrol.AddMission(id, mission)
+	err = f9missioncontrol.AddMission(id, mc)
 	c.Assert(err, NotNil)
 }
 
@@ -67,7 +69,9 @@ func (*TestSuite) TestListMissions(c *C) {
 		mission, err := f9mission.NewMission(mp)
 		c.Assert(err, IsNil)
 
-		err = f9missioncontrol.AddMission(id, mission)
+		mc := &f9missioncontrol.MissionControl{Mission: mission}
+
+		err = f9missioncontrol.AddMission(id, mc)
 		c.Assert(err, IsNil)
 
 		set[id] = struct{}{}
@@ -80,14 +84,14 @@ func (*TestSuite) TestListMissions(c *C) {
 		_, ok := set[id]
 		c.Assert(ok, Equals, true)
 
-		missionIfc := f9missioncontrol.GetMission(id)
-		c.Check(missionIfc.Name(), Equals, fmt.Sprintf("testName-%d", id))
-		c.Check(missionIfc.ID(), Equals, id)
+		mc := f9missioncontrol.GetMission(id)
+		c.Check(mc.Mission.Name(), Equals, fmt.Sprintf("testName-%d", id))
+		c.Check(mc.Mission.ID(), Equals, id)
 	}
 }
 
 func (*TestSuite) TestGetMission(c *C) {
-	var mIfc f9mission.Interface
+	var mIfc *f9missioncontrol.MissionControl
 	var err error
 
 	// clean up the registry
@@ -103,7 +107,9 @@ func (*TestSuite) TestGetMission(c *C) {
 	mission, err := f9mission.NewMission(mp)
 	c.Assert(err, IsNil)
 
-	err = f9missioncontrol.AddMission(id, mission)
+	mc := &f9missioncontrol.MissionControl{Mission: mission}
+
+	err = f9missioncontrol.AddMission(id, mc)
 	c.Assert(err, IsNil)
 
 	//
@@ -111,8 +117,8 @@ func (*TestSuite) TestGetMission(c *C) {
 	//
 	mIfc = f9missioncontrol.GetMission(id)
 	c.Assert(mIfc, NotNil)
-	c.Check(mIfc.Name(), Equals, "testName")
-	c.Check(mIfc.ID(), Equals, id)
+	c.Check(mIfc.Mission.Name(), Equals, "testName")
+	c.Check(mIfc.Mission.ID(), Equals, id)
 
 	//
 	// Test when mission does not exist
@@ -137,7 +143,9 @@ func (*TestSuite) TestRemoveMission(c *C) {
 	mission, err := f9mission.NewMission(mp)
 	c.Assert(err, IsNil)
 
-	err = f9missioncontrol.AddMission(id, mission)
+	mc := &f9missioncontrol.MissionControl{Mission: mission}
+
+	err = f9missioncontrol.AddMission(id, mc)
 	c.Assert(err, IsNil)
 
 	c.Check(len(f9missioncontrol.ListMissions()), Equals, 1)
@@ -153,7 +161,7 @@ func (*TestSuite) TestRemoveMission(c *C) {
 	//
 	mIfc = f9missioncontrol.RemoveMission(id)
 	c.Assert(mIfc, NotNil)
-	c.Check(mIfc.Name(), Equals, "testName")
-	c.Check(mIfc.ID(), Equals, id)
+	c.Check(mIfc.Mission.Name(), Equals, "testName")
+	c.Check(mIfc.Mission.ID(), Equals, id)
 	c.Check(len(f9missioncontrol.ListMissions()), Equals, 0)
 }
